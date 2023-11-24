@@ -1,0 +1,2 @@
+cd ..
+npx http-server -o ./visualize
