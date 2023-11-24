@@ -1,3 +1,4 @@
+import sys
 import os
 import json
 from scoring import calculateScore
@@ -73,27 +74,32 @@ def main():
             mapName = MN.gSandbox
         case _:
             print("Invalid choice.")
+    
+    runLocally = len(sys.argv)>1    
+    
+    if mapName:
+        # Get map data from Considition endpoint
+        with open(f"{game_folder}/top.json", 'r') as f:
+            topScores = json.load(f)
 
-    with open(f"{game_folder}/top.json", 'r') as f:
-        topScores = json.load(f)
-
-    if mapName or option_=='12':
-        ##Get map data from Considition endpoint
-        if option_ != "12":
-            mapEntity = getMapData(mapName, apiKey)
-            ##Get non map specific data from Considition endpoint
-            generalData = getGeneralData()
-
-            with open(f"{game_folder}/m{option_}.json", "w", encoding="utf8") as f:
-                json.dump(mapEntity, f, indent=4)
-            with open(f"{game_folder}/generalData.json", "w", encoding="utf8") as f:
-                json.dump(generalData, f, indent=4)
-        else:
-            with open(f"{game_folder}/m11.json", 'r') as f:
+        if runLocally == True:
+            with open(f"{game_folder}/m{option_}.json", 'r') as f:
                 mapEntity = json.load(f)
             with open(f"{game_folder}/generalData.json", 'r') as f:
                 generalData = json.load(f)
             print(generalData);
+        else:
+            topScores = {}
+            mapEntity = getMapData(mapName, apiKey)
+            ##Get non map specific data from Considition endpoint
+            generalData = getGeneralData()
+                # save files locally
+            if mapEntity != None:
+                with open(f"{game_folder}/m{option_}.json", "w", encoding="utf8") as f:
+                    json.dump(mapEntity, f, indent=4)
+            if generalData != None:
+                with open(f"{game_folder}/generalData.json", "w", encoding="utf8") as f:
+                    json.dump(generalData, f, indent=4)
 
         if mapEntity and generalData:
             # ------------------------------------------------------------
@@ -125,15 +131,16 @@ def main():
             # Store solution locally for visualization
             with open(f"{game_folder}/{id_}.json", "w", encoding="utf8") as f:
                 json.dump(score, f, indent=4)
-            # quit()
+            
             # Submit and and get score from Considition app
-            print(f"Submitting solution to Considtion 2023 \n")
+            if runLocally == False:
+                print(f"Submitting solution to Considtion 2023 \n")
  
-            scoredSolution = submit(mapName, solution, apiKey)
-            if scoredSolution:
-                print("Successfully submitted game")
-                print(f"id: {scoredSolution[SK.gameId]}")
-                print(f"Score: {scoredSolution[SK.gameScore]}")
+                scoredSolution = submit(mapName, solution, apiKey)
+                if scoredSolution:
+                    print("Successfully submitted game")
+                    print(f"id: {scoredSolution[SK.gameId]}")
+                    print(f"Score: {scoredSolution[SK.gameScore]}")
 
 if __name__ == "__main__":
     main()

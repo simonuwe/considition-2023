@@ -174,6 +174,18 @@ def freePosition(generalData, mapEntity) -> int:
             type  = generalData[GK.locationTypes][
                     solutionsLimits[locationType]["name"]       # GK.groceryStoreLarge
                 ][GK.type_]
+            if(mapEntity[MK.border][MK.latitudeMin] > hotspots[key][CK.latitude]
+                or mapEntity[MK.border][MK.latitudeMax] < hotspots[key][CK.latitude]
+              ):
+                print(f"Latitude is missing or out of bounds for location : {key}")
+                continue
+
+            if(mapEntity[MK.border][MK.longitudeMin] > hotspots[key][CK.longitude]
+               or mapEntity[MK.border][MK.longitudeMax] < hotspots[key][CK.longitude]
+              ):
+                print(f"Longitude is missing or out of bounds for location : {key}")
+                continue
+
             solutionCount +=1
             
             neighborCoords = [[hotspots[key][CK.longitude], hotspots[key][CK.latitude]]]
@@ -229,7 +241,7 @@ def freePosition(generalData, mapEntity) -> int:
     solution = utils.optimizeSolution(generalData, mapEntity, neighbors, solution);
 
     # DATA PATCH
-    solution[LK.locations].pop(891)
+    # solution[LK.locations].pop(891)
     # solution[LK.locations].pop(31)
 
     return solution
