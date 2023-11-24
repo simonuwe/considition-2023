@@ -40,7 +40,8 @@ The size of the circle represents the figure.
 - sales: The salesVolume
 - co2: The co2Savings
 - neighbors: # neighbors in willingDistance
-- total: The totalScore for the location  
+- total: The totalScore for the location
+- type: the type of the location as an icon  
 
 **HOTSPOT**
 

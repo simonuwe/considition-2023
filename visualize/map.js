@@ -1,5 +1,7 @@
 "use strict";
 
+import { calculateScore } from "./scoring.js";
+
 const highScore = {
   stockholm:    null,
   goteborg:     6168,
@@ -37,42 +39,6 @@ let cfg = {
     valueField:      'value'
   };
 
-const generalData = {
-    classicUnitData: { type: 'classic', co2PerUnitInGrams: 570, profitPerUnit: 0 },
-    refillUnitData: { type: 'refill', co2PerUnitInGrams: 0, profitPerUnit: 130 },
-    freestyle9100Data: {
-      type: 'freestyle9100',
-      leasingCostPerWeek: 1038,
-      refillCapacityPerWeek: 438,
-      staticCo2: 6330
-    },
-    freestyle3100Data: {
-      type: 'freestyle3100',
-      leasingCostPerWeek: 598,
-      refillCapacityPerWeek: 70,
-      staticCo2: 2110
-    },
-    locationTypes: {
-      groceryStoreLarge: { type: 'Grocery-store-large', salesVolume: 373 },
-      groceryStore: { type: 'Grocery-store', salesVolume: 121 },
-      convenience: { type: 'Convenience', salesVolume: 15 },
-      gasStation: { type: 'Gas-station', salesVolume: 24 },
-      kiosk: { type: 'Kiosk', salesVolume: 3 }
-    },
-    competitionMapNames: [ 'stockholm', 'orebro', 'malmo', 'london', 'berlin', 's-sandbox' ],
-    trainingMapNames: [ 'goteborg', 'uppsala', 'linkoping', 'vasteras', 'g-sandbox' ],
-    co2PricePerKiloInSek: 1.06,
-    willingnessToTravelInMeters: 200,
-    constantExpDistributionFunction: 1.03,
-    refillSalesFactor: 0.58,
-    refillDistributionRate: 0.97,
-    maxGroceryStoreLarge: 5,
-    maxGroceryStore: 20,
-    maxConvenience: 20,
-    maxGasStation: 8,
-    maxKiosk: 3
-  };
-
   const iconSize = [30, 30];
   const icons ={
     'Gas-station':         L.icon({iconUrl: 'gas-station.png', iconSize: iconSize}), 
@@ -85,7 +51,7 @@ const generalData = {
 
 
 
-function drawSolution(generalData, mapData, score, unused, options){
+function drawSolution(generalData, mapData, score, options){
     $('#mapname').html(mapData.mapName);
     $('#score').html(score.gameScore.total);
     $('#relativescore').html((100*score.gameScore.total/highScore[mapData.mapName]).toFixed(2));
@@ -222,7 +188,7 @@ function drawSolution(generalData, mapData, score, unused, options){
     tooltip += '<br/>F9100: ' + scoreEntry.freestyle9100Count;
     const capacity = scoreEntry.freestyle3100Count * generalData.freestyle3100Data.refillCapacityPerWeek + scoreEntry.freestyle9100Count * generalData.freestyle9100Data.refillCapacityPerWeek;
     tooltip += '<br/>Refillcapacity: ' + capacity;
-    tooltip += '<br/>Utilization: ' + (Math.round(100*entry.salesVolume/capacity)) + '%';
+    tooltip += '<br/>Utilization: ' + (Math.round(100*scoreEntry.salesVolume/capacity)) + '%';
     tooltip += '<br/>CO2-saving: ' + scoreEntry.gramCo2Savings;
     tooltip += '<br/>Revenue: ' + scoreEntry.revenue;
     tooltip += '<br/>Earnings: ' + scoreEntry.earnings;
@@ -230,7 +196,7 @@ function drawSolution(generalData, mapData, score, unused, options){
     tooltip += '<br/>Neighbors: ' + neighbors;
     tooltip += '<br/>Salesvolume: ' + entry.salesVolume;
     tooltip += '<br/>Refillvolume: ' + scoreEntry.salesVolume;
-    tooltip += '<br/>Score: ' + Math.round(scoreEntry.total) + (withRefill?'':' no refill');
+    tooltip += '<br/>Score: ' + Math.round(scoreEntry.total,3) + (withRefill?'':' no refill');
     marker.bindTooltip('<b>' + name + ' (' + entry.locationType + ')</b>' + tooltip);
   } 
 }
@@ -243,31 +209,31 @@ $(function() {
 
   console.dir('solutionId', solutionId, 'mode', mode, 'showHotspots', showHotspots);
  
-  function showMap(mapData, score){
-    console.log('showMap', mapData, score);
-    let solution = {};
-    let deleteLocations = {};
+  function showMap(generalData, mapData, solution){
+    console.log('showMap', generalData, mapData, solution);
 
-    var startTime = new Date();
-
-    console.log(mapData.locations, Object.keys(mapData.locations).length);
     if(!mapData.locations || Object.keys(mapData.locations).length==0){
       console.log('NO LOCATIONS');
-      mapData.locations = score.locations
+      mapData.locations = solution.locations
       console.dir(mapData);
     }
-    drawSolution(generalData, mapData, score, deleteLocations, {solutionId: solutionId, mode: mode, showHotspots: showHotspots});
+    $('#status').html('Scoring', mapData.mapName, '...');
+    score = calculateScore(mapData.mapName, solution, mapData, generalData);
+    $('#status').html('');
+    drawSolution(generalData, mapData, score, {solutionId: solutionId, mode: mode, showHotspots: showHotspots});
     console.log(`GameScore: ${score.gameScore.total}`);
     console.log(mapData.mapName, (100*score.gameScore.total/highScore[mapData.mapName]).toFixed(2) + '%', highScore[mapData.mapName]);
   }
 
-  fetch('../my_games/m' + solutionId + '.json')
-  .then((response) => response.json())
-  .then((mapData) => {
-    fetch('../my_games/s' + solutionId + '.json')
-    .then((response) => response.json())
-    .then((solution) => {
-       showMap(mapData, solution);
-    })
-  })
-})
+  $.when(
+    $.getJSON('../my_games/generalData.json'),
+    $.getJSON('../my_games/m' + solutionId + '.json'),
+    $.getJSON('../my_games/s' + solutionId + '.json')
+  ).done(function(result1, result2, result3){
+    showMap(result1[0], result2[0], result3[0]);
+  }).fail(function(result){
+    console.log(result.status, result.statusText);
+    $('#status').html(result.status);
+    $('#text').html(result.statusText);
+  });
+});
