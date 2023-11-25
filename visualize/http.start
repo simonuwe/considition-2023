@@ -1,2 +1,2 @@
 cd ..
-npx http-server -o ./visualize
+npx http-server -c10 -o ./visualize/index.html

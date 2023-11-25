@@ -87,7 +87,7 @@ def main():
                 mapEntity = json.load(f)
             with open(f"{game_folder}/generalData.json", 'r') as f:
                 generalData = json.load(f)
-            print(generalData);
+            # print(generalData);
         else:
             topScores = {}
             mapEntity = getMapData(mapName, apiKey)

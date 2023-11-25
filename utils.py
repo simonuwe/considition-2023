@@ -62,29 +62,75 @@ def printRemaining(startTimestamp, loops, totalLoops):
         todo = round((datetime.now()-startTimestamp)/timedelta(seconds=1)*loops/(totalLoops-loops))
         print('todo', loops, 'of', totalLoops, todo, 'seconds', (datetime.now() + timedelta(seconds=todo)))
 
-def checkSalesCapacities(generalData, locations):
+def adoptSalesCapacities(generalData, solution, locations):
+    modified = False
     for locationKey, location in locations.items():
         if location[LK.salesCapacity]< location[LK.salesVolume]:
-            print('location needs more capacity', locationKey, location[LK.salesCapacity], location[LK.salesVolume])
+            # print('location needs more capacity', locationKey, location[LK.salesCapacity], location[LK.salesVolume])
             total = calcTotal(generalData, location[LK.salesVolume], location[LK.footfall], False)
             if(total[SK.total]>location[SK.total]):
-                print('must increase capacity of', locationKey)
+                print('increase capacity of', locationKey, 'capacity', location[LK.salesCapacity], '<',  location[LK.salesVolume])
+                units = calcUnitsFromSalesVolume(generalData, location[LK.salesVolume])
+                solution[LK.locations][locationKey][LK.f9100Count] = units[LK.f9100Count]
+                solution[LK.locations][locationKey][LK.f3100Count] = units[LK.f3100Count]
+                solution[LK.locations][locationKey][LK.salesCapacity] = units[LK.salesCapacity]
+                print(location)
+                modified = True
+    return modified 
+
+def withoutNoNeighbors(generalData, mapEntity, neighbors, locations, solution, score, options):
+    print("withoutNoNeighbors")
+    # Locations with no neighbors and earning>=0, keep these always
+ 
+    loops = len(locations)
+    locationCount = loops
+    restLocations = []
+    noNeighbors = {}
+    totalLoops = loops
+    startTimestamp = datetime.now()
+    breakTimestamp = startTimestamp + options["maxLoopDuration"]
+    stopProcessing = False
+    for locationKey in locations:
+        if datetime.now()>breakTimestamp: 
+           restLocations.append(locationKey)
+           continue
+        if stopProcessing:
+            break
+        printRemaining(startTimestamp, loops, totalLoops)
+        loops -=1
+        if len(neighbors[locationKey]["neighbors"])==0: # no neighbors
+            if neighbors[locationKey][SK.total][SK.total]>=0:
+                print('always keep profit no neighbors', locationKey)
+            else:   # try in last step to increase total
+                print('no profit, no neighbors', locationKey)
+                noNeighbors[locationKey] = solution[LK.locations][locationKey]
+                solution[LK.locations].pop(locationKey)
+        else:
+            restLocations.append(locationKey)
+
+    locations = restLocations        
+    print('remaining locations 1 (no neighbors profit):', len(locations) ,'of', locationCount)
+    print('noNeighbor-list', len(noNeighbors))
+
+    return ([score, restLocations, noNeighbors, solution])
 
 def optimizeSolution(generalData, mapEntity, allNeighbors, solution):
     global stopProcessing
     maxLoopDuration = timedelta(minutes=30)
     maxLoops = 1000
+    score = None
     neighbors = allNeighbors.copy();
     locationCount = len(solution[LK.locations])
-    
+    options = {"maxLoops": 1000, "maxLoopDuration": timedelta(minutes=30)}
+
     # catch strg-C
     signal.signal(signal.SIGINT, signalHandler)
 
 
     # calculate initial Score
-    score = calculateScore(solution[SK.mapName], solution, mapEntity, generalData)
-    bestTotal = score[SK.gameScore][SK.total]
-    print("OPTIMIZE-SOLUTION: score", bestTotal, datetime.now().strftime("%H:%M:%S"))
+    score = scoreAdopt(solution[SK.mapName], solution, mapEntity, generalData, score)
+    bestScore = score
+    print("OPTIMIZE-SOLUTION: score", bestScore[SK.gameScore][SK.total], datetime.now().strftime("%H:%M:%S"))
     pprint(score[SK.gameScore])
     totals = calcTotals(generalData, neighbors, solution)
     pprint(totals)
@@ -109,36 +155,9 @@ def optimizeSolution(generalData, mapEntity, allNeighbors, solution):
     for locationKey, neighbor in neighbors.items():
        print(locationKey, calcTotal(generalData, neighbor[SK.total][LK.salesVolume], neighbor[SK.total][LK.footfall], True)[SK.total])         
 
-    # Locations with no neighbors and earning>=0, keep these always
     locations = list(solution[LK.locations].keys())
-    noNeighbors = {}
-    loops = len(locations)
-    restLocations = []
-    totalLoops = loops
-    startTimestamp = datetime.now()
-    breakTimestamp = startTimestamp + maxLoopDuration
-    stopProcessing = False
-    for locationKey in locations:
-        if datetime.now()>breakTimestamp: 
-           restLocations.append(location)
-           continue
-        if stopProcessing:
-            break
-        printRemaining(startTimestamp, loops, totalLoops)
-        loops -=1
-        if len(neighbors[locationKey]["neighbors"])==0: # no neighbors
-            if neighbors[locationKey][SK.total][SK.total]>=0:
-                print('always keep profit no neighbors', locationKey)
-            else:   # try in last step to increase total
-                print('no profit, no neighbors', locationKey)
-                noNeighbors[locationKey] = sol[locationKey]
-                solution[LK.locations].pop(locationKey)
-        else:
-            restLocations.append(locationKey)
+    [score, locations, noNeighbors, solution] = withoutNoNeighbors(generalData, mapEntity, neighbors, locations, solution, score, options)
 
-    locations = restLocations        
-    print('remaining locations 1 (no neighbors profit):', len(locations) ,'of', locationCount)
-    print('noNeighbor-list', len(noNeighbors))
     # keep all location with full capacity
     restLocations = []
     stopProcessing = False
@@ -213,10 +232,10 @@ def optimizeSolution(generalData, mapEntity, allNeighbors, solution):
         locationTotal = score[LK.locations][location][SK.total]
         if locationTotal<0: # or True:
             savedLocation = solution[LK.locations].pop(location)
-            score = calculateScore(solution[SK.mapName], solution, mapEntity, generalData)
+            score = scoreAdopt(solution[SK.mapName], solution, mapEntity, generalData, bestScore)
             # print('delete', location, locationTotal, bestTotal, score[SK.gameScore][SK.total], score[SK.gameScore][SK.totalFootfall])
-            if(bestTotal <score[SK.gameScore][SK.total]):
-                bestTotal = score[SK.gameScore][SK.total]
+            if(bestScore[SK.gameScore][SK.total] <score[SK.gameScore][SK.total]):
+                bestScore = score
                 deleteNeighbor(neighbors, location)
                 print('scored location removed', location)
             else:
@@ -229,15 +248,14 @@ def optimizeSolution(generalData, mapEntity, allNeighbors, solution):
     # pprint(neighbors)            
 
     locations = restLocations
-    score = calculateScore(solution[SK.mapName], solution, mapEntity, generalData)
-    checkSalesCapacities(generalData, score[LK.locations])
+    score = scoreAdopt(solution[SK.mapName], solution, mapEntity, generalData, score)
     print('remaining locations 4 negative total:', len(locations) ,'of', locationCount)
     pprint(score[SK.gameScore])
     # pprint(solution)
 
     
-    score = calculateScore(solution[SK.mapName], solution, mapEntity, generalData)
-    bestTotal = score[SK.gameScore][SK.total]
+    score = scoreAdopt(solution[SK.mapName], solution, mapEntity, generalData, score)
+    bestScore = score
 
         # try to remove location with most neighbors    
     restLocations = []
@@ -258,19 +276,19 @@ def optimizeSolution(generalData, mapEntity, allNeighbors, solution):
         locationTotal = score[LK.locations][location][SK.total]
         if locationTotal>0:
             savedLocation = solution[LK.locations].pop(location)
-            score = calculateScore(solution[SK.mapName], solution, mapEntity, generalData)
+            score = scoreAdopt(solution[SK.mapName], solution, mapEntity, generalData, bestScore)
             # print('delete', location, locationTotal, bestTotal, score[SK.gameScore][SK.total], score[SK.gameScore][SK.totalFootfall])
-            if(bestTotal <score[SK.gameScore][SK.total]):
-                bestTotal = score[SK.gameScore][SK.total]
+            if(bestScore[SK.gameScore][SK.total] <score[SK.gameScore][SK.total]):
+                bestScore = score
                 deleteNeighbor(neighbors, location)
-                print('location removed', location, bestTotal)
+                print('location removed', location, bestScore[SK.gameScore][SK.total])
             else:
-                print('location NOT removed', location, bestTotal)
+                print('location NOT removed', location, bestScore[SK.gameScore][SK.total])
                 solution[LK.locations][location] = savedLocation
                 restLocations.append(location)
 
     locations = restLocations
-    score = calculateScore(solution[SK.mapName], solution, mapEntity, generalData)
+    score = scoreAdopt(solution[SK.mapName], solution, mapEntity, generalData, score)
     print('remaining locations 5:', len(locations) ,'of', locationCount)
     pprint(score[SK.gameScore])
 
@@ -290,17 +308,15 @@ def optimizeSolution(generalData, mapEntity, allNeighbors, solution):
             break
         printRemaining(startTimestamp, loops, totalLoops)
         loops -=1
-        bestTotal = score[SK.gameScore][SK.total]
+        bestScore = score
         score = tryAddLocation(generalData, mapEntity, solution, locationKey, noNeighbors[locationKey], score)
 
-    score = calculateScore(solution[SK.mapName], solution, mapEntity, generalData)
-    checkSalesCapacities(generalData, score[LK.locations])
+    score = scoreAdopt(solution[SK.mapName], solution, mapEntity, generalData, score)
     print('remaining locations 6:', len(locations) ,'of', locationCount)
     pprint(score[SK.gameScore])
 
     solution = tryRandomLocation(generalData, mapEntity, solution, score, 2000, datetime.now() + timedelta(minutes=5))
-    score = calculateScore(solution[SK.mapName], solution, mapEntity, generalData)
-    checkSalesCapacities(generalData, score[LK.locations])
+    score = scoreAdopt(solution[SK.mapName], solution, mapEntity, generalData, score)
     return solution
 
 def tryRandomLocation(generalData, mapEntity, solution, score, loops, endTimestamp):
@@ -317,10 +333,12 @@ def tryRandomLocation(generalData, mapEntity, solution, score, loops, endTimesta
         locationKey = locations[randomPos]
         print('try random', i, locationKey)
         savedLocation = solution[LK.locations].pop(locationKey)
-        newScore = calculateScore(solution[SK.mapName], solution, mapEntity, generalData)
+        newScore = scoreAdopt(solution[SK.mapName], solution, mapEntity, generalData, score)
         if(newScore[SK.gameScore][SK.total]<score[SK.gameScore][SK.total]): # lower score, undo delete
             solution[LK.locations][locationKey] = savedLocation
+            print('location NOT removed', locationKey, score[SK.gameScore][SK.total])
         else:
+            print('location removed', locationKey, newScore[SK.gameScore][SK.total])
             score = newScore
             locations.pop(randomPos)
     return solution
@@ -330,7 +348,7 @@ def tryAddLocation(generalData, mapEntity, solution, locationKey, location, scor
     solution[LK.locations][locationKey] = location
     # pprint(solution)
     total = score[SK.gameScore][SK.total]
-    newScore = calculateScore(solution[SK.mapName], solution, mapEntity, generalData)
+    newScore = scoreAdopt(solution[SK.mapName], solution, mapEntity, generalData, score)
     newTotal = newScore[SK.gameScore][SK.total]
     if newTotal>total: 
         print('higher score', locationKey, newTotal, total, 'footfall', newScore[SK.gameScore][SK.totalFootfall], score[SK.gameScore][SK.totalFootfall])
@@ -360,9 +378,18 @@ def calcUnitsFromSalesVolume(generalData, salesVolume):
         f3100Count = math.ceil(restSalesVolume/generalData[GK.f3100Data][GK.refillCapacityPerWeek]);
   
     f3100Count = min(maxF3100,f3100Count)
+    salesCapacity = f3100Count* generalData[GK.f3100Data][GK.refillCapacityPerWeek] + f9100Count* generalData[GK.f9100Data][GK.refillCapacityPerWeek]
+    return({LK.f3100Count: f3100Count, 
+            LK.f9100Count: f9100Count, 
+            LK.salesCapacity: salesCapacity});
 
-    return({LK.f3100Count: f3100Count, LK.f9100Count: f9100Count});
-
+def scoreAdopt(mapName, solution, mapEntity, generalData, score):
+    newScore = calculateScore(mapName, solution, mapEntity, generalData)
+    if(score != None and newScore[SK.gameScore][SK.total]>score[SK.gameScore][SK.total]):
+        if adoptSalesCapacities(generalData, solution, score[LK.locations]):
+            print('recalculateScore')
+            newScore = calculateScore(mapName, solution, mapEntity, generalData)
+    return newScore
 
 def calcTotal(generalData, salesVolume, footfall, distribute):
     # salesVolume = round(salesVolume * generalData[GK.refillSalesFactor])

@@ -182,6 +182,9 @@ function drawSolution(generalData, mapData, score, options){
       }
     } else {
       marker = L.circle([entry.latitude, entry.longitude], circleType).addTo(map);
+      if(options.mode=="distance") {
+        L.circle([entry.latitude, entry.longitude], {radius: 5, color: "black"}).addTo(map);
+      }
     }
 
     tooltip += '<br/>F3100: ' + scoreEntry.freestyle3100Count;
@@ -228,7 +231,7 @@ $(function() {
   $.when(
     $.getJSON('../my_games/generalData.json'),
     $.getJSON('../my_games/m' + solutionId + '.json'),
-    $.getJSON('../my_games/s' + solutionId + '.json')
+    $.getJSON('../my_games/s' + solutionId + '.json?dummy=' + Math.round(Math.random()*100000))
   ).done(function(result1, result2, result3){
     showMap(result1[0], result2[0], result3[0]);
   }).fail(function(result){
