@@ -237,7 +237,7 @@ export const sandboxValidation = (inMapName, request, mapData) => {
   return returnValue;
 }
 
-const distanceBetweenPoint = (latitude1, longitude1, latitude2, longitude2) =>
+export const distanceBetweenPoint = (latitude1, longitude1, latitude2, longitude2) =>
 {
     let r = 6371e3;
     let latRadian1 = latitude1 * Math.PI / 180;

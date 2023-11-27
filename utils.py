@@ -78,8 +78,32 @@ def adoptSalesCapacities(generalData, solution, locations):
                 modified = True
     return modified 
 
-def withoutNoNeighbors(generalData, mapEntity, neighbors, locations, solution, score, options):
-    print("withoutNoNeighbors")
+def calcUnitsFromSalesVolume(generalData, salesVolume):
+        # f9100 to fullfil salesVolume, max 5 of each
+    salesVolume = round(salesVolume * generalData[GK.refillSalesFactor])
+    f9100Count = min(maxF9100, math.floor(salesVolume/generalData[GK.f9100Data][GK.refillCapacityPerWeek]));
+        # rest salesvolume with f3100
+    restSalesVolume = max(0, salesVolume - f9100Count* generalData[GK.f9100Data][GK.refillCapacityPerWeek]);
+    f3100Count = min(maxF3100, math.ceil(restSalesVolume/generalData[GK.f3100Data][GK.refillCapacityPerWeek]));
+    # print('calcUnitsFromSalesVolume', f9100Count, f3100Count, salesVolume, restSalesVolume)
+        # perhaps f9100 can replace several f3100 because leasing costs are lower
+    while (f9100Count <maxF9100) and (f3100Count * generalData[GK.f3100Data][GK.leasingCostPerWeek]>generalData[GK.f9100Data][GK.leasingCostPerWeek]):
+            # one more f9100
+        f9100Count +=1
+            # calc f3100 for the rest of the salesvolume
+        restSalesVolume = max(0, salesVolume - generalData[GK.f9100Data][GK.refillCapacityPerWeek]);
+        f3100Count = math.ceil(restSalesVolume/generalData[GK.f3100Data][GK.refillCapacityPerWeek]);
+  
+    f3100Count = min(maxF3100,f3100Count)
+    salesCapacity = f3100Count* generalData[GK.f3100Data][GK.refillCapacityPerWeek] + f9100Count* generalData[GK.f9100Data][GK.refillCapacityPerWeek]
+    return({LK.f3100Count: f3100Count, 
+            LK.f9100Count: f9100Count, 
+            LK.salesCapacity: salesCapacity,
+            LK.salesVolume: salesVolume});
+
+
+def withoutNeighbors(generalData, mapEntity, neighbors, locations, solution, score, options):
+    print("withoutNeighbors")
     # Locations with no neighbors and earning>=0, keep these always
  
     loops = len(locations)
@@ -101,10 +125,11 @@ def withoutNoNeighbors(generalData, mapEntity, neighbors, locations, solution, s
         if len(neighbors[locationKey]["neighbors"])==0: # no neighbors
             if neighbors[locationKey][SK.total][SK.total]>=0:
                 print('always keep profit no neighbors', locationKey)
+                units = calcUnitsFromSalesVolume(generalData, mapEntity[LK.locations][locationKey][LK.salesVolume])
+                solution[LK.locations][locationKey] = {LK.f9100Count: units[LK.f9100Count], LK.f3100Count: units[LK.f3100Count]}
             else:   # try in last step to increase total
                 print('no profit, no neighbors', locationKey)
-                noNeighbors[locationKey] = solution[LK.locations][locationKey]
-                solution[LK.locations].pop(locationKey)
+                noNeighbors[locationKey] = locationKey
         else:
             restLocations.append(locationKey)
 
@@ -112,12 +137,63 @@ def withoutNoNeighbors(generalData, mapEntity, neighbors, locations, solution, s
     print('remaining locations 1 (no neighbors profit):', len(locations) ,'of', locationCount)
     print('noNeighbor-list', len(noNeighbors))
 
-    return ([score, restLocations, noNeighbors, solution])
+    return ([score, restLocations, solution])
+
+def with1Neighbors(generalData, mapEntity, neighbors, locations, solution, score, options):
+    # Locations with one neighbors
+ 
+    loops = len(locations)
+    locationCount = loops
+    totalLoops = loops
+    startTimestamp = datetime.now()
+    breakTimestamp = startTimestamp + options["maxLoopDuration"]
+    stopProcessing = False
+
+    restLocations = []
+    noNeighbors = {}
+
+    for locationKey in locations:
+        foundNeighbor = None
+        if datetime.now()>breakTimestamp: 
+           restLocations.append(locationKey)
+           continue
+        if stopProcessing:
+            break
+        printRemaining(startTimestamp, loops, totalLoops)
+        loops -=1
+        if len(neighbors[locationKey]["neighbors"])==1: # 1 neighbors
+            neighborKey = list(neighbors[locationKey]["neighbors"].keys())[0]
+                # neighbor has higher salesvolume, so take them
+            if len(neighbors[neighborKey]["neighbors"])>1:
+                print("1 neighbor neighbors", locationKey, neighborKey)
+                foundNeighbor = neighborKey
+            else: # neighbor has one neighbor too, take the one with more salesVolume
+                if mapEntity[LK.locations][locationKey][LK.salesVolume] < mapEntity[LK.locations][neighborKey][LK.salesVolume]:
+                    print("1 neighbor sales", locationKey, neighborKey)
+                    foundNeighbor = neighborKey
+                else:
+                            # neighbor has same salesvolume, take the one with the lower name
+                   if mapEntity[LK.locations][locationKey][LK.salesVolume] == mapEntity[LK.locations][neighborKey][LK.salesVolume] and neighborKey>locationKey:
+                        print("1 neighbor name", locationKey, neighborKey)
+                        foundNeighbor = neighborKey
+        if foundNeighbor!=None:
+            units = calcUnitsFromSalesVolume(generalData, mapEntity[LK.locations][neighborKey][LK.salesVolume])
+            solution[LK.locations][neighborKey] = {LK.f9100Count: units[LK.f9100Count], LK.f3100Count: units[LK.f3100Count]}
+            deleteNeighbor(neighbors, foundNeighbor)
+        else:
+            restLocations.append(locationKey)
+
+
+    locations = restLocations        
+    score = scoreAdopt(solution[SK.mapName], solution, mapEntity, generalData, score)
+
+    print('remaining locations 1 (no neighbors profit):', len(locations) ,'of', locationCount)
+    print('noNeighbor-list', len(noNeighbors))
+    return ([score, restLocations, solution])
+
 
 def optimizeSolution(generalData, mapEntity, allNeighbors, solution):
     global stopProcessing
-    maxLoopDuration = timedelta(minutes=30)
-    maxLoops = 1000
     score = None
     neighbors = allNeighbors.copy();
     locationCount = len(solution[LK.locations])
@@ -126,6 +202,12 @@ def optimizeSolution(generalData, mapEntity, allNeighbors, solution):
     # catch strg-C
     signal.signal(signal.SIGINT, signalHandler)
 
+    locations = list(mapEntity[LK.locations].keys())
+    [score, locations, solution] = withoutNeighbors(generalData, mapEntity, neighbors, locations, solution, score, options)
+
+    [score, locations, solution] = with1Neighbors(generalData, mapEntity, neighbors, locations, solution, score, options)
+    score = scoreAdopt(solution[SK.mapName], solution, mapEntity, generalData, score)
+    return solution
 
     # calculate initial Score
     score = scoreAdopt(solution[SK.mapName], solution, mapEntity, generalData, score)
@@ -360,28 +442,6 @@ def tryAddLocation(generalData, mapEntity, solution, locationKey, location, scor
         solution[LK.locations].pop(locationKey)
 
     return(newScore)
-
-def calcUnitsFromSalesVolume(generalData, salesVolume):
-        # f9100 to fullfil salesVolume, max 5 of each
-    salesVolume = round(salesVolume)
-    f9100Count = min(maxF9100, math.floor(salesVolume/generalData[GK.f9100Data][GK.refillCapacityPerWeek]));
-        # rest salesvolume with f3100
-    restSalesVolume = max(0, salesVolume - f9100Count* generalData[GK.f9100Data][GK.refillCapacityPerWeek]);
-    f3100Count = min(maxF3100, math.ceil(restSalesVolume/generalData[GK.f3100Data][GK.refillCapacityPerWeek]));
-    # print('calcUnitsFromSalesVolume', f9100Count, f3100Count, salesVolume, restSalesVolume)
-        # perhaps f9100 can replace several f3100 because leasing costs are lower
-    while (f9100Count <maxF9100) and (f3100Count * generalData[GK.f3100Data][GK.leasingCostPerWeek]>generalData[GK.f9100Data][GK.leasingCostPerWeek]):
-            # one more f9100
-        f9100Count +=1
-            # calc f3100 for the rest of the salesvolume
-        restSalesVolume = max(0, salesVolume - generalData[GK.f9100Data][GK.refillCapacityPerWeek]);
-        f3100Count = math.ceil(restSalesVolume/generalData[GK.f3100Data][GK.refillCapacityPerWeek]);
-  
-    f3100Count = min(maxF3100,f3100Count)
-    salesCapacity = f3100Count* generalData[GK.f3100Data][GK.refillCapacityPerWeek] + f9100Count* generalData[GK.f9100Data][GK.refillCapacityPerWeek]
-    return({LK.f3100Count: f3100Count, 
-            LK.f9100Count: f9100Count, 
-            LK.salesCapacity: salesCapacity});
 
 def scoreAdopt(mapName, solution, mapEntity, generalData, score):
     newScore = calculateScore(mapName, solution, mapEntity, generalData)

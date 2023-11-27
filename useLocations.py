@@ -81,7 +81,9 @@ def useLocations(generalData, mapEntity):
     starttime =  datetime.now()
     print('START', starttime.strftime("%H:%M:%S"))  
     print('LOCATIONS:', len(locations))
-
+    solution = {SK.mapName: mapEntity[SK.mapName],
+                LK.locations: {}
+            }
     neighbors = calcNeighbors(generalData, locations)
     # pprint(neighbors)
     # save neighbors to speedup calculateScore
@@ -89,7 +91,7 @@ def useLocations(generalData, mapEntity):
 
     # pprint(locations);
 
-    solution = calcInitialSolution(generalData, mapEntity, neighbors)
+    # solution = calcInitialSolution(generalData, mapEntity, neighbors)
     # pprint(solution)
 
     solution = utils.optimizeSolution(generalData, mapEntity, neighbors, solution);

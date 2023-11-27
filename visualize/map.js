@@ -1,18 +1,6 @@
 "use strict";
 
-import { calculateScore } from "./scoring.js";
-
-const highScore = {
-  stockholm:    null,
-  goteborg:     6168,
-  malmo:        null,
-  uppsala:      2416,
-  vasteras:     1498,
-  orebro:       null,
-  london:       null,
-  linkoping:     699,
-  berlin:       null
-}
+import { calculateScore, distanceBetweenPoint } from "./scoring.js";
 
 const minCycle = 25;
 
@@ -50,21 +38,44 @@ let cfg = {
   };
 
 
+  function calcNeighbors(generalData, mapEntity){
+    let neighbors = {};
+    Object.entries(mapEntity.locations).forEach(([locationKey, location]) => {
+      let count = 1;
+      neighbors[locationKey] = {neighbors: {}}
+      Object.entries(mapEntity.locations).forEach(([locationSurroundingKey, locationSurrounding]) => {
+        if(locationKey != locationSurroundingKey){
+          let distance = distanceBetweenPoint(
+            location.latitude, location.longitude, locationSurrounding.latitude, locationSurrounding.longitude
+          );
+          if(distance < generalData.willingnessToTravelInMeters){
+            neighbors[locationKey].neighbors[locationSurroundingKey]= {distance: distance};
+          }
+        }
+      });
+    });
+    return neighbors;
+  }
 
-function drawSolution(generalData, mapData, score, options){
-    $('#mapname').html(mapData.mapName);
+let heatmapLayer = new HeatmapOverlay(cfg);
+let baseLayer = L.tileLayer( 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+let map = new L.Map('map', {
+  zoom: 4,
+  layers: [baseLayer, heatmapLayer]
+});
+
+function drawSolution(generalData, mapEntity, neighbors, topScore, score, options){
+    let highScore = topScore[mapEntity.mapName];
+    $('#mapname').html(mapEntity.mapName);
     $('#score').html(score.gameScore.total);
-    $('#relativescore').html((100*score.gameScore.total/highScore[mapData.mapName]).toFixed(2));
+    $('#highscore').html(highScore);
+    $('#relativescore').html((100*score.gameScore.total/highScore).toFixed(2));
   
 
-    let heatmapLayer = new HeatmapOverlay(cfg);
-    let baseLayer = L.tileLayer( 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
-    let map = new L.Map('map', {
-      zoom: 4,
-      layers: [baseLayer, heatmapLayer]
-    }).fitBounds([
-      L.latLng(mapData.border.latitudeMin, mapData.border.longitudeMin),
-      L.latLng(mapData.border.latitudeMax, mapData.border.longitudeMax)
+    
+    map.fitBounds([
+      L.latLng(mapEntity.border.latitudeMin, mapEntity.border.longitudeMin),
+      L.latLng(mapEntity.border.latitudeMax, mapEntity.border.longitudeMax)
     ]);
 
   let circleType={
@@ -78,7 +89,7 @@ function drawSolution(generalData, mapData, score, options){
     let heatData = [];
     let marker = null;
     if(false){
-      for(const [name, entry] of Object.entries(mapData.hotspots)){
+      for(const [name, entry] of Object.entries(mapEntity.hotspots)){
         circleType.color = 'green'
         circleType.radius = entry.spread
         marker = L.circle([entry.latitude, entry.longitude], circleType).addTo(map);
@@ -89,7 +100,7 @@ function drawSolution(generalData, mapData, score, options){
       }
     } else {
       let maxValue=-100000000000000000000000
-      for(const [name, entry] of Object.entries(mapData.hotspots)){
+      for(const [name, entry] of Object.entries(mapEntity.hotspots)){
         switch(options.showHotspots){
         case 'footfall':
           maxValue=Math.max(maxValue, entry.footfall);
@@ -106,12 +117,16 @@ function drawSolution(generalData, mapData, score, options){
     } 
   }
 
-  for(const [name, entry] of Object.entries(mapData.locations)){
-    console.log('DRAW', name);
+  for(const [locationKey, entry] of Object.entries(mapEntity.locations)){
+    console.log('DRAW', locationKey);
     let tooltip = '';
+    let neighborKeys = {}
+    if(neighbors[locationKey]){
+      neighborKeys = neighbors[locationKey].neighbors|| {}
+    }
 
-    const neighbors = Object.keys(entry.neighbors || {}).length;
-    const scoreEntry = score.locations[name] || entry;
+    const neighborCount = Object.keys(neighborKeys).length;
+    const scoreEntry = score.locations[locationKey] || entry;
     //{freestyle3100Count: 0, freestyle9100Count: 0, earnings: 0, revenue: 0, gramCo2Savings:0, salesVolume: 0};
     scoreEntry.salesVolume = scoreEntry.salesVolume!=null?scoreEntry.salesVolume:0;
     scoreEntry.freestyle9100Count = scoreEntry.freestyle9100Count!=null?scoreEntry.freestyle9100Count:0;
@@ -121,10 +136,10 @@ function drawSolution(generalData, mapData, score, options){
     scoreEntry.total = scoreEntry.total!=null?scoreEntry.total:0;
     scoreEntry.gramCo2Savings = scoreEntry.gramCo2Savings!=null?scoreEntry.gramCo2Savings:0;
     //{freestyle3100Count: 0, freestyle9100Count: 0, earnings: 0, revenue: 0, gramCo2Savings:0, salesVolume: 0};
-    const withRefill = (score.locations[name]!=null);
+    const withRefill = (score.locations[locationKey]!=null);
 
     if(entry.salesVolume< scoreEntry.salesVolume){
-      console.log('SALES MOVED FROM NEIGHBORS', name, scoreEntry.salesVolume-entry.salesVolume);
+      console.log('SALES MOVED FROM NEIGHBORS', locationKey, scoreEntry.salesVolume-entry.salesVolume);
     }
 
     switch(options.mode) {
@@ -149,7 +164,7 @@ function drawSolution(generalData, mapData, score, options){
         circleType.color = scoreEntry.earnings>0?'green':'red';
       break;
       case 'neighbors':
-        circleType.radius = minCycle + (50 * neighbors);
+        circleType.radius = minCycle + (25 * neighborCount);
         circleType.color = neighbors>0?'green':'red';
       break;
       case 'total':
@@ -196,47 +211,68 @@ function drawSolution(generalData, mapData, score, options){
     tooltip += '<br/>Revenue: ' + scoreEntry.revenue;
     tooltip += '<br/>Earnings: ' + scoreEntry.earnings;
     tooltip += '<br/>Profitable: ' + (scoreEntry.isProfitable?'YES':'NO');
-    tooltip += '<br/>Neighbors: ' + neighbors;
+    tooltip += '<br/>Neighbors: ' + neighborCount;
     tooltip += '<br/>Salesvolume: ' + entry.salesVolume;
     tooltip += '<br/>Refillvolume: ' + scoreEntry.salesVolume;
     tooltip += '<br/>Score: ' + Math.round(scoreEntry.total,3) + (withRefill?'':' no refill');
-    marker.bindTooltip('<b>' + name + ' (' + entry.locationType + ')</b>' + tooltip);
+    marker.bindTooltip('<b>' + locationKey + ' (' + entry.locationType + ')</b>' + tooltip);
   } 
 }
-  
-
+ 
 $(function() {
   const solutionId = $.url.param('solution');
   const mode = $.url.param('mode');
   const showHotspots = $.url.param('showhotspots');
 
+  $("#mapId").selectmenu({change: function( event, data ) {
+      drawNewSolution(data.item.value );
+    }
+});
+
   console.dir('solutionId', solutionId, 'mode', mode, 'showHotspots', showHotspots);
  
-  function showMap(generalData, mapData, solution){
-    console.log('showMap', generalData, mapData, solution);
-
-    if(!mapData.locations || Object.keys(mapData.locations).length==0){
+  function showMap(generalData, highScore, mapEntity, solution){
+    console.log('showMap', generalData, mapEntity, solution);
+    let neighbors = calcNeighbors(generalData, mapEntity)
+    if(!mapEntity.locations || Object.keys(mapEntity.locations).length==0){
       console.log('NO LOCATIONS');
-      mapData.locations = solution.locations
-      console.dir(mapData);
+      mapEntity.locations = solution.locations
+      console.dir(mapEntity);
     }
-    $('#status').html('Scoring', mapData.mapName, '...');
-    score = calculateScore(mapData.mapName, solution, mapData, generalData);
+    $('#status').html('Scoring', mapEntity.mapName, '...');
+    score = calculateScore(mapEntity.mapName, solution, mapEntity, generalData);
     $('#status').html('');
-    drawSolution(generalData, mapData, score, {solutionId: solutionId, mode: mode, showHotspots: showHotspots});
+    drawSolution(generalData, mapEntity, neighbors, highScore, score, {solutionId: solutionId, mode: mode, showHotspots: showHotspots});
     console.log(`GameScore: ${score.gameScore.total}`);
-    console.log(mapData.mapName, (100*score.gameScore.total/highScore[mapData.mapName]).toFixed(2) + '%', highScore[mapData.mapName]);
+    console.log(mapEntity.mapName, (100*score.gameScore.total/highScore[mapEntity.mapName]).toFixed(2) + '%', highScore[mapEntity.mapName]);
   }
 
+  function drawNewSolution(solutionId){
+    $.when(
+      $.getJSON('../my_games/generalData.json'),
+      $.getJSON('../my_games/top.json'),
+      $.getJSON('../my_games/m' + solutionId + '.json'),
+      $.getJSON('../my_games/s' + solutionId + '.json?dummy=' + Math.round(Math.random()*100000))
+    ).done(function(result1, result2, result3, result4){
+      showMap(result1[0], result2[0], result3[0], result4[0]);
+    }).fail(function(result){
+      console.log(result.status, result.statusText);
+      $('#status').html(result.status);
+      $('#text').html(result.statusText);
+    });
+  }
+/*  
   $.when(
     $.getJSON('../my_games/generalData.json'),
+    $.getJSON('../my_games/top.json'),
     $.getJSON('../my_games/m' + solutionId + '.json'),
     $.getJSON('../my_games/s' + solutionId + '.json?dummy=' + Math.round(Math.random()*100000))
-  ).done(function(result1, result2, result3){
-    showMap(result1[0], result2[0], result3[0]);
+  ).done(function(result1, result2, result3, result4){
+    showMap(result1[0], result2[0], result3[0], result4[0]);
   }).fail(function(result){
     console.log(result.status, result.statusText);
     $('#status').html(result.status);
     $('#text').html(result.statusText);
   });
+*/
 });

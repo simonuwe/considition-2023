@@ -7,26 +7,57 @@
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="leaflet.css">
   <link rel="stylesheet" href="map.css">
-  <script src="jquery-3.7.1.js"></script> 
   <script src="jquery.url.js"></script> 
+  <link rel="stylesheet" href="jquery-ui-1.13.2/jquery-ui.css">
+  <script src="jquery-ui-1.13.2/jquery-ui.js"></script>
   <script src="heatmap.js"></script> 
   <script src="leaflet.js"></script> 
   <script src="leaflet-heatmap.js"></script> 
   <script type="module" src="map.js"></script> 
 </head>
   <body>
-    <span><div id="status"></div><div id="text"></div></span>
-    <div id="map"></div>
-    <table>
-      <tr>
-        <td>Map</td><td id="mapname"></td>
-      </tr>
-      <tr>
-        <td>Score</td><td id="score"></td>
-      </tr>
-      <tr>
-        <td>%</td><td id="relativescore"></td>
-      </tr>
-    </table>
+    <div>
+      <span><div id="status"></div><div id="text"></div></span>
+      <table>
+        <tr>
+          <td>Map</td>
+          <td>
+            <form action="#"></form>
+            <select name="speed" id="mapId">
+              <option disabled selected>Please pick one</option>
+              <optgroup label="Training">
+                <option value="2">goteborg</option>
+                <option value="4">uppsala</option>
+                <option value="5">vasteras</option>
+                <option value="9">linkoping</option>
+                <option value="11">g-sandbox</option>
+              </optgroup>
+              <optgroup label="Competition">
+              <option value="1">stockholm</option>
+                <option value="3">malmo</option>
+                <option value="6">orebro</option>
+                <option value="7">london</option>
+                <option value="8">berlin</option>
+                <option value="10">s-sandbox</option>
+              </optgroup>
+            </select>
+            </form>
+          </td>
+        </tr>
+        <tr>
+          <td>Map</td><td id="mapname"></td>
+        </tr>
+        <tr>
+          <td>Score</td><td id="score"></td>
+        </tr>
+        <tr>
+          <td>Highscore</td><td id="highscore"></td>
+        </tr>
+        <tr>
+          <td>%</td><td id="relativescore"></td>
+        </tr>
+      </table>
+    </div>
+    <div id="map" class="map"></div>
   </body>
 </html>
